@@ -2,3 +2,4 @@ schedule_*
 grafik_*
 # Project exclude paths
 /venv/
+.idea
