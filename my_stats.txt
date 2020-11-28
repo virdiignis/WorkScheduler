@@ -1,0 +1,26 @@
+Score:											54
+Uncovered shifts:								5		Punishment:		145
+Shifts on blue:									50		Bonus:		400
+Shifts on white:								110
+Shifts on yellow:								3		Punishment:		27
+Shifts on red:									0		Punishment:		0
+Shifts in a row:								0		Punishment:		0
+Shifts with 8h break:							7		Punishment:		56
+More than 2 shifts in 40h:						0		Punishment:		0
+Max difference in shifts per person (np):		6		Punishment:		6
+Deviations by more than 0.5 from median:		12		Punishment:		64
+Shift times inequalites sum:					48		Punishment:		48
+
+09:23:35: Best rank: 30		Worst rank: 30
+Score:											30
+Uncovered shifts:								5		Punishment:		145
+Shifts on blue:									46		Bonus:		368
+Shifts on white:								108
+Shifts on yellow:								3		Punishment:		27
+Shifts on red:									0		Punishment:		0
+Shifts in a row:								0		Punishment:		0
+Shifts with 8h break:							5		Punishment:		40
+More than 2 shifts in 40h:						0		Punishment:		0
+Max difference in shifts per person:			7		Punishment:		7
+Deviations by more than 0.5 from median:		8		Punishment:		76
+Shift times inequalites sum:					43		Punishment:		43
