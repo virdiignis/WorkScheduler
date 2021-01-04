@@ -9,7 +9,7 @@ import numpy as np
 import random
 import time
 
-# import pandas as pd
+import pandas as pd
 
 PEOPLE_PER_SHIFT = 2
 
@@ -56,10 +56,10 @@ SHIFTS_COUNT_PER_PERSON_DEVIATION_PENALTY = 20
 UNCOVERED_SHIFTS_PENALTY = 290
 SHIFT_TIME_INEQUALITY_PENALTY = 10
 
-RANDOM_INSTANCES = 200000
+RANDOM_INSTANCES = 100000
 GENERATION_INSTANCES = 100
 ALGORITHM_STEPS = 400000
-INITIAL_BEST_SCORE = 5010
+INITIAL_BEST_SCORE = 2800
 
 
 def log(s: str):
@@ -125,7 +125,7 @@ class Schedule:
             print(
                 f"Uncovered shifts:\t\t\t\t\t\t\t\t{uncovered_shifts}\t\tPunishment:\t\t{uncovered_shifts * UNCOVERED_SHIFTS_PENALTY}")
             blue__sum = (shifts_preferences == PREF_BLUE).sum()
-            print(f"Shifts on blue:\t\t\t\t\t\t\t\t\t{blue__sum}\t\tBonus:\t\t\t{blue__sum * PREF_BLUE}")
+            print(f"Shifts on blue:\t\t\t\t\t\t\t\t\t{blue__sum}\t\tBonus:\t\t{blue__sum * PREF_BLUE}")
             print(f"Shifts on white:\t\t\t\t\t\t\t\t{(shifts_preferences == PREF_WHITE).sum()}")
             yellow__sum = (shifts_preferences == PREF_YELLOW).sum()
             print(f"Shifts on yellow:\t\t\t\t\t\t\t\t{yellow__sum}\t\tPunishment:\t\t{-yellow__sum * PREF_YELLOW}")
@@ -190,7 +190,7 @@ class Schedule:
         return self.__hash__()
 
     def dump(self):
-        with open(f"schedules/schedule_{time.strftime('%d_%m_%y-%H:%M:%S')}_{self.get_score()}.csv", 'w',
+        with open(f"random/schedule_{time.strftime('%d_%m_%y-%H:%M:%S')}_{self.get_score()}.csv", 'w',
                   newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerows(self._arr.astype('int'))
@@ -351,22 +351,21 @@ class ScheduleFactory:
 
 
 class GeneticAlgorithm:
-    def __init__(self, prefs_path, paths=None):
+    def __init__(self, prefs, instances=None):
         self.best = INITIAL_BEST_SCORE
         self.best_hashes = []
         self.pool = Pool()
-        self.prefs = self.read_preferences(prefs_path)
+        self.prefs = prefs
         log("Read preferences.")
-        self._pr = partial(ScheduleFactory.random, schedule_prefs=self.prefs)
+        # self._pr = partial(ScheduleFactory.random, schedule_prefs=self.prefs)
         log("Generating instances.")
-        self.instances = list(self.pool.imap_unordered(self._pr, [0] * RANDOM_INSTANCES, 100))
-        # self.instances = list(self._pr(0) for _ in range(RANDOM_INSTANCES))
+        # self.instances = list(self.pool.imap_unordered(self._pr, [0] * RANDOM_INSTANCES, 1000))
         # for i in self.instances:
         #     i.dump()
         # return
-        # self.instances = []
-        if paths is not None:
-            self.instances.extend(ScheduleFactory.from_file(path, self.prefs) for path in paths)
+        self.instances = instances
+        # if paths is not None:
+        #     self.instances.extend(ScheduleFactory.from_file(path, self.prefs) for path in paths)
         log("Ranking instances.")
         self.ranking(fuzzy=False)
         del self.instances[GENERATION_INSTANCES:]
@@ -391,20 +390,31 @@ class GeneticAlgorithm:
         self.instances = [x[0] for x in
                           sorted(scored, key=lambda x: -x[1] + (np.random.randint(-5, 6) if fuzzy else 0))]
 
-    def run(self, m_variant=0, c_variant=0, e_variant=0, f_variant=0):
+    def run(self, mutation_variant=0, pairing_variant=0, breeding_variant=0, fuzzy_variant=0):
+        stats = []
+        log(f"Random instances: {RANDOM_INSTANCES}\n"
+            f"Generation instances: {GENERATION_INSTANCES}\n"
+            f"Mutation variant: {mutation_variant}\n"
+            f"Pairing variant: {pairing_variant}\n"
+            f"Breeding variant: {breeding_variant}\n"
+            f"Fuzzy variant: {fuzzy_variant}\n")
+        ta = time.perf_counter()
+        ltp = 0
         for i in range(ALGORITHM_STEPS):
+            iter_stats = [RANDOM_INSTANCES, GENERATION_INSTANCES, mutation_variant, pairing_variant, breeding_variant,
+                          fuzzy_variant, i]
             # log(f"Iteration {i} started.")
             # self.instances.extend(self.pool.imap_unordered(self._pr, [0] * int(GENERATION_INSTANCES / 10)))
             t = time.perf_counter()
-            if m_variant == 1:
+            if mutation_variant == 1:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-            elif m_variant == 2:
+            elif mutation_variant == 2:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:] * 10))
-            elif m_variant == 3:
+            elif mutation_variant == 3:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-            elif m_variant == 4:
+            elif mutation_variant == 4:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
                 self.instances.extend(
                     self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[len(self.instances) // 2:]))
@@ -412,79 +422,99 @@ class GeneticAlgorithm:
                     self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[len(self.instances) // 2:]))
             mutation_time = time.perf_counter() - t
             # log(f"Instances mutated in {mutation_time :.3f}s.")
-            if m_variant:
-                self.ranking(bool(f_variant))
+            iter_stats.append(mutation_time)
+            t = time.perf_counter()
+            if mutation_variant:
+                self.ranking(fuzzy_variant)
                 del self.instances[GENERATION_INSTANCES:]
+            ranking_time = time.perf_counter() - t
+            iter_stats.append(ranking_time)
+
             t = time.perf_counter()
 
-            if c_variant == 1:
+            if pairing_variant == 1:
                 pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
-            elif c_variant == 2:
+            elif pairing_variant == 2:
                 pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
                 pairs.extend((self.instances[i], self.instances[i + 2]) for i in range(len(self.instances) - 2))
-            elif c_variant == 3:
+            elif pairing_variant == 3:
                 pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
                 pairs.extend((self.instances[i], self.instances[i + 2]) for i in range(len(self.instances) - 2))
                 half_instances = len(self.instances) // 2
                 pairs.extend((self.instances[i], self.instances[i + half_instances]) for i in range(half_instances))
-            elif c_variant == 4:
+            elif pairing_variant == 4:
                 half_instances = len(self.instances) // 2
                 pairs = [(self.instances[i], self.instances[i + half_instances]) for i in range(half_instances)]
-            elif c_variant == 5:
+            elif pairing_variant == 5:
                 pairs = combinations(self.instances, 2)
-            elif c_variant == 6:
+            elif pairing_variant == 6:
                 pairs = chain(
                     combinations(self.instances[GENERATION_INSTANCES // 2:], 2),
                     combinations(self.instances[:GENERATION_INSTANCES // 2], 2),
                 )
 
-            if e_variant == 1:
+            if breeding_variant == 1:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.consecutive, pairs))
-            elif e_variant == 2:
+            elif breeding_variant == 2:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.half_by_half, pairs))
-            elif e_variant == 3:
+            elif breeding_variant == 3:
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.consecutive, pairs))
                 self.instances.extend(self.pool.imap_unordered(ScheduleFactory.half_by_half, pairs))
 
             crossing_time = time.perf_counter() - t
             # log(f"Instances crossed in {crossing_time :.3f}s.")
+            iter_stats.append(crossing_time)
 
-            if e_variant:
+            t = time.perf_counter()
+            if breeding_variant:
                 self.ranking(fuzzy=False)
                 del self.instances[GENERATION_INSTANCES:]
+            ranking_time = time.perf_counter() - t
+            iter_stats.append(ranking_time)
 
-            # self.ranking(fuzzy=False)
             best_score = self.instances[0].get_score()
             worst_score = self.instances[-1].get_score()
-            log(f"Best rank: {best_score}\t\tWorst rank: {worst_score}")
+            time_passed = time.perf_counter() - ta
+            iter_stats.append(time_passed)
+            iter_stats.append(best_score)
+            iter_stats.append(worst_score)
+            stats.append(iter_stats)
+            if time_passed - ltp > 10:
+                ltp = time_passed
+                log(f"Time passed: {time_passed}\t\tBest rank: {best_score}\t\tWorst rank: {worst_score}")
             if best_score > self.best:
-                self.instances[0].get_score(verbose=True)
-                self.instances[0].dump()
+                # self.instances[0].get_score(verbose=True)
+                # self.instances[0].dump()
                 self.best = best_score
                 self.best_hashes.append(self.instances[0].hash())
             elif best_score == self.best and self.instances[0].hash() not in self.best_hashes:
-                self.instances[0].get_score(verbose=True)
-                self.instances[0].dump()
+                # self.instances[0].get_score(verbose=True)
+                # self.instances[0].dump()
                 self.best_hashes.append(self.instances[0].hash())
-        self.ranking(fuzzy=False)
-        self.instances[0].get_score(verbose=True)
+            if time_passed > 60:
+                break
+        # self.ranking(fuzzy=False)
+        # self.instances[0].get_score(verbose=True)
+        log(f"Score to 60s: {best_score}")
+        return stats
         # self.instances[0].dump()
 
 
 if __name__ == '__main__':
-    with open('schedules/paths.txt') as f:
-        paths = list(map(str.strip, f.readlines()))
-    GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_sty.csv').run(3, 3, 3, 0)
-
-    # with open('random/paths.txt') as f:
+    # with open('schedules/paths.txt') as f:
     #     paths = list(map(str.strip, f.readlines()))
+    # GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_sty.csv')
+    # exit()
 
-    # random_instances = range(100, 63970, 100)
-    # generation_instances = (10, 20, 50, 100, 200, 300, 400, 500)
-    # m_variants = range(5)
-    # c_variants = range(7)
-    # e_variants = range(4)
-    # r_variants = range(3)
+    with open('random/paths.txt') as f:
+        paths = list(map(str.strip, f.readlines()))
+
+    random_instances = (100, 1000, 10000, 30000)
+    generation_instances = (10, 25, 50, 100, 200, 300, 400, 500)
+    mutation_variants = range(5)
+    pairing_variants = range(7)
+    breeding_variants = range(4)
+    fuzzy_variants = range(2)
     #
     # # test 1
     # g = 100
@@ -499,25 +529,39 @@ if __name__ == '__main__':
     #     stats = np.array(alg.run(m, c, e, f))
     #     pd.DataFrame(stats).to_csv(f"stats/stats_{r}_{g}_{m}_{c}_{e}_{f}.csv", header=None, index=None)
 
-# for r in random_instances:
-#     p_paths = paths[:r]
-#     RANDOM_INSTANCES = r
-#     for g in generation_instances:
-#         if g > r:
-#             continue
-#         GENERATION_INSTANCES = g
-#         for c in c_variants:
-#             for f in f_variants:
-#                 if (c == 0 and f != 0) or (f == 0 and c != 0):
-#                     continue
-#                 for m in m_variants:
-#                     if m == 0 and c == 0:
-#                         continue
-#                     for fuzz in r_variants:
-#                         alg = GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_gru_bez27.csv', paths)
-#                         stats = np.array(alg.run(m, c, f, fuzz))
-#                         pd.DataFrame(stats).to_csv(f"stats/stats_{r}_{g}_{c}_{f}_{m}_{fuzz}.csv", header=None,
-#                                                    index=None)
+    prefs = GeneticAlgorithm.read_preferences('/home/prance/Studia/COVID/Grafik/prefs_sty.csv')
+    for r in random_instances:
+        instances = list(ScheduleFactory.from_file(path, prefs) for path in paths[:r])
+        RANDOM_INSTANCES = r
+        for g in generation_instances:
+            if g > r:
+                continue
+            GENERATION_INSTANCES = g
+            for mutation_variant in mutation_variants:
+                for pairing_variant in pairing_variants:
+                    if mutation_variant == 0 and pairing_variant == 0:
+                        continue
+                    if pairing_variant == 0:
+                        breeding_variant = 0
+                        for fuzzy_variant in fuzzy_variants:
+                            alg = GeneticAlgorithm(prefs, instances)
+                            stats = np.array(
+                                alg.run(mutation_variant, pairing_variant, breeding_variant, fuzzy_variant))
+                            pd.DataFrame(stats).to_csv(
+                                f"stats/stats_{r}_{g}_{mutation_variant}_{pairing_variant}_{breeding_variant}_{fuzzy_variant}.csv",
+                                header=None,
+                                index=None)
+                        continue
+                    else:
+                        for breeding_variant in tuple(breeding_variants)[1:]:
+                            for fuzzy_variant in fuzzy_variants:
+                                alg = GeneticAlgorithm(prefs, instances)
+                                stats = np.array(
+                                    alg.run(mutation_variant, pairing_variant, breeding_variant, fuzzy_variant))
+                                pd.DataFrame(stats).to_csv(
+                                    f"stats/stats_{r}_{g}_{mutation_variant}_{pairing_variant}_{breeding_variant}_{fuzzy_variant}.csv",
+                                    header=None,
+                                    index=None)
 
 # g = GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_gru_bez27.csv', paths)
 # g.run(3, 3, 3, 3)

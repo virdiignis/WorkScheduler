@@ -1,2 +1,3 @@
 50 items: -6: 200 iters 2:20m
 20 items: -6: 552 iters 2:40m
+47:57 - 44:17 (20k random, 100 instances, 400 iterations)
