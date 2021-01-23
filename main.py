@@ -81,6 +81,60 @@ class Schedule:
             self._score = self.calculate_score(verbose)
         return self._score
 
+    def __hash__(self):
+        return int(md5(self._arr).hexdigest(), 16)
+
+    def __bool__(self):
+        return True
+
+    def __eq__(self, other):
+        if type(other) is Schedule:
+            return self.hash() == other.hash()
+        else:
+            return self._arr == other.arr
+
+    def __getitem__(self, item):
+        return self._arr.__getitem__(item)
+
+    def __setitem__(self, key, value):
+        self._score = None
+        return self._arr.__setitem__(key, value)
+
+    @property
+    def arr(self):
+        return self._arr
+
+    @arr.setter
+    def arr(self, arr):
+        self._score = None
+        self._arr = arr
+
+    @property
+    def shape(self):
+        return self._arr.shape
+
+    @property
+    def prefs(self):
+        return self._prefs
+
+    def sum(self, *args, **kwargs):
+        return self._arr.sum(*args, **kwargs)
+
+    def hash(self):
+        return self.__hash__()
+
+    def dump(self):
+        with open(f"schedules/schedule_{time.strftime('%d_%m_%y-%H:%M:%S')}_{self.get_score()}.csv", 'w',
+                  newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerows(self._arr.astype('int'))
+
+    def copy(self):
+        return Schedule(self._arr.copy(), self._prefs)
+
+    def __lt__(self, other):
+        return self.get_score() < other.get_score()
+
     def calculate_score(self, verbose=False) -> Any:
         partial_score = 0
         uncovered_shifts = self._arr.shape[0] * 2 - self._arr.sum()
@@ -147,60 +201,6 @@ class Schedule:
 
         return partial_score
 
-    def __hash__(self):
-        return int(md5(self._arr).hexdigest(), 16)
-
-    def __bool__(self):
-        return True
-
-    def __eq__(self, other):
-        if type(other) is Schedule:
-            return self.hash() == other.hash()
-        else:
-            return self._arr == other.arr
-
-    def __getitem__(self, item):
-        return self._arr.__getitem__(item)
-
-    def __setitem__(self, key, value):
-        self._score = None
-        return self._arr.__setitem__(key, value)
-
-    @property
-    def arr(self):
-        return self._arr
-
-    @arr.setter
-    def arr(self, arr):
-        self._score = None
-        self._arr = arr
-
-    @property
-    def shape(self):
-        return self._arr.shape
-
-    @property
-    def prefs(self):
-        return self._prefs
-
-    def sum(self, *args, **kwargs):
-        return self._arr.sum(*args, **kwargs)
-
-    def hash(self):
-        return self.__hash__()
-
-    def dump(self):
-        with open(f"schedules/schedule_{time.strftime('%d_%m_%y-%H:%M:%S')}_{self.get_score()}.csv", 'w',
-                  newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerows(self._arr.astype('int'))
-
-    def copy(self):
-        return Schedule(self._arr.copy(), self._prefs)
-
-    def __lt__(self, other):
-        return self.get_score() < other.get_score()
-
 
 class ShiftFactory:
     @staticmethod
@@ -263,7 +263,7 @@ class ScheduleFactory:
     @classmethod
     def mutated(cls, schedule: Schedule):
         schedule_copy = schedule.copy()
-        for _ in range(random.choice((1, 3))):  # TODO: stestować ten parametr
+        for _ in range(random.choice((1, 3))):
             variant = random.randint(0, 10)
             if variant <= -1:
                 cls.__swap_shifts(schedule_copy)
@@ -387,9 +387,7 @@ class GeneticAlgorithm:
     def ranking(self, fuzzy=True):
         self.instances = set(self.instances)
         scored = self.pool.imap_unordered(Schedule.get_scored, self.instances, 10)
-        # scored = [ps(i) for i in self.instances]
-        self.instances = [x[0] for x in
-                          sorted(scored, key=lambda x: -x[1] + (np.random.randint(-5, 6) if fuzzy else 0))]
+        self.instances = [x[0] for x in sorted(scored, key=lambda x: -x[1] + (np.random.randint(-5, 6) if fuzzy else 0))]
 
     def run(self, m_variant=0, c_variant=0, e_variant=0, f_variant=0):
         for i in range(ALGORITHM_STEPS):
