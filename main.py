@@ -13,7 +13,7 @@ import time
 
 PEOPLE_PER_SHIFT = 2
 
-EMPLOYEES_NUMBER = 10
+EMPLOYEES_NUMBER = 9
 EMPLOYEES_TIME_PARTS = np.array([
     1.,
     1.,
@@ -23,30 +23,28 @@ EMPLOYEES_TIME_PARTS = np.array([
     1.,
     1.,
     1,
-    0.5,
     1.,
 ])
 assert len(EMPLOYEES_TIME_PARTS) == EMPLOYEES_NUMBER
 
 EMPLOYEES_SHIFTS_UP_TO_NOW = np.array([
-    56,
-    56,
-    56,
-    59,
-    57,
-    55,
-    50,
-    56,
-    28,
-    56,
+    114,
+    113,
+    114,
+    113,
+    113,
+    112,
+    112,
+    114,
+    113,
 ]) / EMPLOYEES_TIME_PARTS
 EMPLOYEES_SHIFTS_UP_TO_NOW -= EMPLOYEES_SHIFTS_UP_TO_NOW.min()
 EMPLOYEES_SHIFTS_UP_TO_NOW = EMPLOYEES_SHIFTS_UP_TO_NOW.astype('int')
 
 PREF_RED = -500
-PREF_YELLOW = -90
+PREF_YELLOW = -180
 PREF_WHITE = 0
-PREF_BLUE = 70
+PREF_BLUE = 50
 
 SHIFTS_IN_A_ROW_PENALTY = 150
 SHIFTS_WITH_8H_BREAK_PENALTY = 80
@@ -56,10 +54,10 @@ SHIFTS_COUNT_PER_PERSON_DEVIATION_PENALTY = 20
 UNCOVERED_SHIFTS_PENALTY = 290
 SHIFT_TIME_INEQUALITY_PENALTY = 10
 
-RANDOM_INSTANCES = 200000
+RANDOM_INSTANCES = 100000
 GENERATION_INSTANCES = 100
-ALGORITHM_STEPS = 400000
-INITIAL_BEST_SCORE = 5010
+ALGORITHM_STEPS = 40000
+INITIAL_BEST_SCORE = 600
 
 
 def log(s: str):
@@ -220,7 +218,7 @@ class ShiftFactory:
         if prev2_shift is not None:
             allowed_enum *= np.abs(prev2_shift - 1).astype('bool')
         allowed_indexes = np.where(allowed_enum)[0]
-        max_choice = min(allowed_indexes.shape[0], 2)
+        max_choice = min(allowed_indexes.shape[0], PEOPLE_PER_SHIFT)
         rand_indexes = np.random.choice(allowed_indexes, max_choice, replace=False)
         z[rand_indexes] = 1
         return z
@@ -254,7 +252,8 @@ class ScheduleFactory:
             s1, s2 = s
         else:
             s2, s1 = s
-        half = s1.shape[0] // 2
+        # half = s1.shape[0] // 2
+        half = random.randint(1, s1.shape[0]-2)
         p1 = list(s1[:half])
         p2 = list(s2[half:])
         p1.extend(p2)
@@ -263,16 +262,15 @@ class ScheduleFactory:
     @classmethod
     def mutated(cls, schedule: Schedule):
         schedule_copy = schedule.copy()
-        for _ in range(random.choice((1, 3))):
-            variant = random.randint(0, 10)
-            if variant <= -1:
-                cls.__swap_shifts(schedule_copy)
-            elif variant <= 0:
-                cls.__swap_shift_between_2_people(schedule_copy)
-            elif variant <= 5:
-                cls.__remove_person_from_shift(schedule_copy)
-            elif variant <= 10:
-                cls.__add_person_to_unfilled_shift(schedule_copy)
+        v = random.randint(0, 11)
+        if v <= 9:
+            cls.__swap_shift_between_2_people(schedule_copy)
+        else:
+            for x in range(4):
+                if np.random.randint(0, 2):
+                    cls.__remove_person_from_shift(schedule_copy)
+                else:
+                    cls.__add_person_to_unfilled_shift(schedule_copy)
 
         return schedule_copy
 
@@ -386,70 +384,26 @@ class GeneticAlgorithm:
 
     def ranking(self, fuzzy=True):
         self.instances = set(self.instances)
-        scored = self.pool.imap_unordered(Schedule.get_scored, self.instances, 10)
+        scored = self.pool.imap_unordered(Schedule.get_scored, self.instances)
         self.instances = [x[0] for x in sorted(scored, key=lambda x: -x[1] + (np.random.randint(-5, 6) if fuzzy else 0))]
 
-    def run(self, m_variant=0, c_variant=0, e_variant=0, f_variant=0):
+    def run(self):
         for i in range(ALGORITHM_STEPS):
             # log(f"Iteration {i} started.")
-            # self.instances.extend(self.pool.imap_unordered(self._pr, [0] * int(GENERATION_INSTANCES / 10)))
-            t = time.perf_counter()
-            if m_variant == 1:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-            elif m_variant == 2:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:] * 10))
-            elif m_variant == 3:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-            elif m_variant == 4:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:]))
-                self.instances.extend(
-                    self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[len(self.instances) // 2:]))
-                self.instances.extend(
-                    self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[len(self.instances) // 2:]))
-            mutation_time = time.perf_counter() - t
-            # log(f"Instances mutated in {mutation_time :.3f}s.")
-            if m_variant:
-                self.ranking(bool(f_variant))
-                del self.instances[GENERATION_INSTANCES:]
-            t = time.perf_counter()
 
-            if c_variant == 1:
-                pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
-            elif c_variant == 2:
-                pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
-                pairs.extend((self.instances[i], self.instances[i + 2]) for i in range(len(self.instances) - 2))
-            elif c_variant == 3:
-                pairs = [(self.instances[i], self.instances[i + 1]) for i in range(len(self.instances) - 1)]
-                pairs.extend((self.instances[i], self.instances[i + 2]) for i in range(len(self.instances) - 2))
-                half_instances = len(self.instances) // 2
-                pairs.extend((self.instances[i], self.instances[i + half_instances]) for i in range(half_instances))
-            elif c_variant == 4:
-                half_instances = len(self.instances) // 2
-                pairs = [(self.instances[i], self.instances[i + half_instances]) for i in range(half_instances)]
-            elif c_variant == 5:
-                pairs = combinations(self.instances, 2)
-            elif c_variant == 6:
-                pairs = chain(
-                    combinations(self.instances[GENERATION_INSTANCES // 2:], 2),
-                    combinations(self.instances[:GENERATION_INSTANCES // 2], 2),
-                )
+            self.instances.extend(self.pool.imap_unordered(ScheduleFactory.mutated, self.instances[:] * 10))
 
-            if e_variant == 1:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.consecutive, pairs))
-            elif e_variant == 2:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.half_by_half, pairs))
-            elif e_variant == 3:
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.consecutive, pairs))
-                self.instances.extend(self.pool.imap_unordered(ScheduleFactory.half_by_half, pairs))
+            self.ranking(fuzzy=True)
+            del self.instances[GENERATION_INSTANCES:]
 
-            crossing_time = time.perf_counter() - t
-            # log(f"Instances crossed in {crossing_time :.3f}s.")
+            half_instances = len(self.instances) // 2
+            pairs = [(self.instances[i], self.instances[i + half_instances]) for i in range(half_instances)]
 
-            if e_variant:
-                self.ranking(fuzzy=False)
-                del self.instances[GENERATION_INSTANCES:]
+            self.instances.extend(self.pool.imap_unordered(ScheduleFactory.consecutive, pairs))
+            self.instances.extend(self.pool.imap_unordered(ScheduleFactory.half_by_half, pairs))
+
+            self.ranking(fuzzy=False)
+            del self.instances[GENERATION_INSTANCES:]
 
             # self.ranking(fuzzy=False)
             best_score = self.instances[0].get_score()
@@ -466,13 +420,13 @@ class GeneticAlgorithm:
                 self.best_hashes.append(self.instances[0].hash())
         self.ranking(fuzzy=False)
         self.instances[0].get_score(verbose=True)
-        # self.instances[0].dump()
+        self.instances[0].dump()
 
 
 if __name__ == '__main__':
-    with open('schedules/paths.txt') as f:
-        paths = list(map(str.strip, f.readlines()))
-    GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_sty.csv').run(3, 3, 3, 0)
+    # with open('schedules/paths.txt') as f:
+    #     paths = list(map(str.strip, f.readlines()))
+    GeneticAlgorithm('/home/prance/Studia/COVID/Grafik/prefs_kwi.csv').run()
 
     # with open('random/paths.txt') as f:
     #     paths = list(map(str.strip, f.readlines()))
